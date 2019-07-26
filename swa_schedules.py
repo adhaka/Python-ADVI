@@ -30,7 +30,7 @@ def stepsize_linear_adaptive_schedule(params, lr_current, lr_min, lr_max, epoch_
 		# this step computes the moving average which helps us to do away with storing the param values at each epoch.
 		if params_swa is not None:
 			means_swa = [(i*swa_n + j)/(swa_n+1) for i,j in zip(params_swa[0], params[0])]
-			logsigmas_swa = [(i*swa_n + j)/(swa_n+1) for i,j in zip(params_swa[1], params[1])]
+			logsigmas_swa = [np.log((np.exp(i)*swa_n + np.exp(j))/(swa_n+1)) for i,j in zip(params_swa[1], params[1])]
 		else:
 			means_swa = params_swa[0]
 			logsigmas_swa = params_swa[1]
