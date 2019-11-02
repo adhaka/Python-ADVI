@@ -2,10 +2,8 @@
 '''
 file to plot K hat values vs D where D is the dimensionality of the variational parameters for a
 linear gaussian model where the covariates are correlated, and mean field approximation is
-insufficient and hence we use full rank approximation here.
-
+insufficient but we still use it just for illustration purposes.
 '''
-
 
 import os
 os.environ['MACOSX_DEPLOYMENT_TARGET'] = '10.9'
@@ -25,34 +23,21 @@ import scipy
 from scipy import stats
 import pickle
 #import scipy.stats as stats
+import argparse
 
 from swa_schedules import stepsize_cyclical_adaptive_schedule, stepsize_linear_adaptive_schedule, stepsize_linear_weight_averaging, stepsize_linear_adaptive_is_mixing_schedule, rms_prop_gradient
 from helper import compute_entropy, gaussian_entropy, expectation_iw, compute_l2_norm
 from autograd import grad
 from arviz import psislw
 
-import argparse
+
+np.set_printoptions(precision=3)
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--algorithm', '-a', type=int, default=1)
 parser.add_argument('--N', '-n', type=int, default=1000)
 
 args = parser.parse_args()
-
-algo = 'meanfield'
-algo_name='mf'
-
-if args.algorithm ==1:
-    algo = 'meanfield'
-    algo_name = 'mf'
-elif args.algorithm ==2:
-    algo = 'fullrank'
-    algo_name = 'fr'
-
-
-N_user= args.N
-
-np.set_printoptions(precision=3)
+N_user = args.N
 
 ##  code for linear model with fixed variances .
 linear_regression_code= """
@@ -136,12 +121,12 @@ N_train = N_user
 N = N_user
 K=  2
 K_list = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-K_list = [5, 10, 22, 31, 40, 50]
+K_list = [5, 10, 19, 30, 40,50]
 
 num_K = len(K_list)
 M = 1
 w0= 0
-N_sim = 3
+N_sim = 2
 K_hat_stan_advi_list = np.zeros((num_K, N_sim))
 debug_mode = True
 
@@ -179,6 +164,8 @@ for j in range(num_K):
         #W_cov = np.asarray([[0.99,0.004],[0.004, 0.99]])
 
         # W= W_mean
+        print(W_mean.shape)
+        print(W_cov.shape)
         W = np.random.multivariate_normal(W_mean, W_cov, 1).T
         print(W.shape)
         #W = np.random.normal(w_mean, w_sigma, (K,M))
@@ -212,8 +199,8 @@ for j in range(num_K):
 
             num_proposal_samples = 6000
             #fit_hmc = sm.sampling(data=model_data, iter=800)
-            fit_vb = sm.vb(data=model_data, iter=90000, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
-                           algorithm=algo)
+            fit_vb = sm.vb(data=model_data, iter=30000, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
+                           algorithm='meanfield')
             # ### Run ADVI in Python
             # use analytical gradient of entropy
             compute_entropy_grad = grad(compute_entropy)
@@ -286,12 +273,13 @@ for j in range(num_K):
             is_correction = True
             num_samples_swa = 1
 
-            #for itt in range(itt_max):
-                #zs = np.random.normal(0, 1, size=(num_params, num_samples))
-                #zs_swa = np.random.normal(0, 1, size=(num_params, num_samples_swa))
-                #if itt == start_swa_iter:
-                #    print(L_vb_swa)
-                #    print(means_vb_swa)
+
+            for itt in range(itt_max):
+                zs = np.random.normal(0, 1, size=(num_params, num_samples))
+                zs_swa = np.random.normal(0, 1, size=(num_params, num_samples_swa))
+                if itt == start_swa_iter:
+                    print(L_vb_swa)
+                    print(means_vb_swa)
 
 
                 #mean_grads_running_dot_product = np.mean(mean_grad*old_mean_grad)
@@ -344,7 +332,6 @@ for j in range(num_K):
             # Stan-VB
             fit_vb_samples = np.array(fit_vb['sampler_params']).T
             print(fit_vb_samples[1,:])
-            #exit()
             stan_vb_w = fit_vb_samples[:,:K]
             stan_vb_mean = np.mean(stan_vb_w, axis=0)
             stan_vb_cov = np.cov(stan_vb_w[:,0], stan_vb_w[:,1])
@@ -371,11 +358,11 @@ for j in range(num_K):
             print(K_hat_stan)
 
 
-###################### Plotting L2 norm here #################################
+    ###################### Plotting L2 norm here #################################
 
 plt.figure()
 plt.plot(stan_vb_w[:,0], stan_vb_w[:,1], 'mo', label='STAN-ADVI')
-plt.savefig('vb_w_samples.pdf')
+plt.savefig('vb_w_samples_mf.pdf')
 
 
             # plt.figure(figsize=(20, 6))
@@ -389,9 +376,7 @@ plt.figure()
 plt.plot(K_list, np.mean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
 plt.plot(K_list, np.min(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 plt.plot(K_list, np.max(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
-
-np.save('K_hat_logistic_correlated_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
-#plt.ylim((0,5))
+plt.ylim((0,5))
 
 plt.legend()
-plt.savefig('Linear_Regression_K_hat_vs_D_correlated_' + algo_name +'_' + str(N) + 'N.pdf')
+plt.savefig('Linear_Regression_K_hat_vs_D_mf_5000N.pdf')
