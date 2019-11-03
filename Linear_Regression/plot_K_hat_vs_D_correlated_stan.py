@@ -161,6 +161,8 @@ for j in range(num_K):
         Z = Z[:,np.newaxis]
         rbf_kernel = GPy.kern.RBF(lengthscale=1, input_dim=1)
         covar= rbf_kernel.K(Z)
+        print(covar)
+        exit()
 
         #X = np.concatenate((X_tmp, np.ones((N,1))), axis=1)
 
@@ -183,9 +185,6 @@ for j in range(num_K):
         print(W.shape)
         #W = np.random.normal(w_mean, w_sigma, (K,M))
         #W = np.concatenate((W, np.ones((1,M))*w0), axis=0)
-
-        W_mean = np.repeat(w_mean, K)
-        W_sigma = np.repeat(w_sigma, K)
 
         #sigma_0 = np.random.gamma(0.5, 0.5, M)
         sigma_0 = 0.90
@@ -390,7 +389,7 @@ plt.plot(K_list, np.mean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
 plt.plot(K_list, np.min(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 plt.plot(K_list, np.max(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 
-np.save('K_hat_logistic_correlated_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
+np.save('K_hat_linear_correlated_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
 #plt.ylim((0,5))
 
 plt.legend()

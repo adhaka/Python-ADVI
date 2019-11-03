@@ -21,17 +21,14 @@ import pystan
 import scipy
 from scipy import stats
 import pickle
-import GPy
 
-import argparse
 from swa_schedules import stepsize_cyclical_adaptive_schedule, stepsize_linear_adaptive_schedule
 
 from helper import compute_entropy, gaussian_entropy, expectation_iw, compute_l2_norm
 from autograd import grad
 from arviz import psislw
 
-np.set_printoptions(precision=3)
-
+import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--algorithm', '-a', type=int, default=1)
@@ -52,9 +49,11 @@ elif args.algorithm ==2:
 
 N_user= args.N
 
+np.set_printoptions(precision=3)
+
 ## code for general linear model without any constraints and gamma prior for std dev.
 ##  code for linear model with fixed variances .
-linear_reg_fixed_variance_code= """
+logistic_reg_fixed_variance_code= """
 data{
     int<lower=0> N;
     int<lower=0> K;
@@ -109,9 +108,9 @@ logit = lambda x: 1./ (1 +np.exp(-x))
 N_train = N_user
 N = N_user
 K_list = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-K_list = [5, 10, 20, 30]
+K_list = [5, 10, 20, 30, 40, 50]
 num_K = len(K_list)
-N_sim= 3
+N_sim= 1
 
 K_hat_stan_advi_list = np.zeros((num_K, N_sim))
 debug_mode = True
@@ -119,7 +118,7 @@ debug_mode = True
 
 for j in range(num_K):
     for n in range(N_sim):
-        N_train = 5000
+        N_train = N_user
         N_test = 50
         K = K_list[j]
         M = 1
@@ -133,6 +132,7 @@ for j in range(num_K):
         cov_sd = 2.2
 
         x_full = np.zeros((N_train + N_test, K))
+
         for k in np.arange(K):
             x_full[:, k] = np.random.normal(0, 1, N_train + N_test)
 
@@ -141,11 +141,6 @@ for j in range(num_K):
         X = x_full[:N_train, :]
         X_test = x_full[N_train:, :]
 
-        Z= np.linspace(-1,1, K)
-        Z = Z[:,np.newaxis]
-        rbf_kernel = GPy.kern.RBF(lengthscale=1, input_dim=1)
-        covar= rbf_kernel.K(Z)
-
         w_mean = 0
         w_mean = 4
         w_sigma= 0.5
@@ -153,9 +148,9 @@ for j in range(num_K):
         w_mean_true = w_mean
         w_sigma_true = w_sigma
 
-        W_mean = np.ones((K,))*4
-        W_cov = covar
-        W = np.random.multivariate_normal(W_mean, W_cov, 1).T
+        W = np.random.normal(w_mean, w_sigma, (K,M))
+        W_mean = np.repeat(w_mean, K)
+        W_sigma = np.repeat(w_sigma, K)
         y_mean = x_full @ W
 
         p_full = logit(y_mean)
@@ -169,18 +164,18 @@ for j in range(num_K):
        'X':X
        }
 
-        #sm = pystan.StanModel(model_code=linear_regression_code)
+        sm = pystan.StanModel(model_code=logistic_reg_fixed_variance_code)
         try:
-            sm = pickle.load(open('model_logistic.pkl', 'rb'))
+            sm = pickle.load(open('model_logistic_independent.pkl', 'rb'))
         except:
-            sm = pystan.StanModel(model_code=linear_reg_fixed_variance_code)
+            sm = pystan.StanModel(model_code=logistic_reg_fixed_variance_code)
             with open('model_logistic.pkl', 'wb') as f:
                 pickle.dump(sm, f)
 
         num_proposal_samples = 6000
         #fit_hmc = sm.sampling(data=model_data, iter=600)
-        fit_vb = sm.vb(data=model_data, iter=70000, tol_rel_obj=1e-4, output_samples=num_proposal_samples, algorithm=algo)
-        # ### Run ADVI in Python
+        fit_vb = sm.vb(data=model_data, iter=90000, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
+                           algorithm=algo)
         # use analytical gradient of entropy
         compute_entropy_grad = grad(compute_entropy)
         # ### Run ADVI in Python
@@ -397,8 +392,8 @@ for j in range(num_K):
         params_vb_std = np.std(stan_vb_w, axis=0)
         params_vb_sq = np.mean(stan_vb_w**2, axis=0)
 
-        logq = stats.norm.pdf(stan_vb_w, params_vb_means, params_vb_std)
-        logq_sum = np.sum(np.log(logq), axis=1)
+        logq = stats.norm.logpdf(stan_vb_w, params_vb_means, params_vb_std)
+        logq_sum = np.sum(logq, axis=1)
         print(logq_sum.shape)
         stan_vb_log_joint_density = fit_vb_samples[:, K]
         log_iw = log_density2 - logq_sum
@@ -444,9 +439,6 @@ for j in range(num_K):
 
 ###################### Plotting L2 norm here #################################
 
-plt.figure()
-plt.plot(stan_vb_w[:,0], stan_vb_w[:,1], 'mo', label='STAN-ADVI')
-plt.savefig('vb_w_samples.pdf')
 
 
             # plt.figure(figsize=(20, 6))
@@ -457,13 +449,12 @@ plt.savefig('vb_w_samples.pdf')
             # plt.show()
 
 plt.figure()
-plt.plot(K_list, np.nanmean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
-plt.plot(K_list, np.nanmin(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
-plt.plot(K_list, np.nanmax(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.plot(K_list, np.mean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
+plt.plot(K_list, np.min(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.plot(K_list, np.max(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 
-np.save('K_hat_logistic_correlated'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
+np.save('K_hat_logistic_independent_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
 #plt.ylim((0,5))
 
-
 plt.legend()
-plt.savefig('Logistic_Regression_K_hat_vs_D_correlated_' + algo_name +'_' + str(N) + 'N.pdf')
+plt.savefig('Logistic_Regression_K_hat_vs_D_independent_' + algo_name +'_' + str(N) + 'N.pdf')
