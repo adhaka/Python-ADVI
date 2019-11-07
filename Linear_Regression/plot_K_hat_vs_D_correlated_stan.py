@@ -36,9 +36,11 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--algorithm', '-a', type=int, default=1)
 parser.add_argument('--N', '-n', type=int, default=1000)
+parser.add_argument('--iters', '-i', type=int, default=40000)
 
 args = parser.parse_args()
 
+max_iters = args.iters
 algo = 'meanfield'
 algo_name='mf'
 
@@ -136,7 +138,7 @@ N_train = N_user
 N = N_user
 K=  2
 K_list = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-K_list = [5, 10, 22, 31, 40, 50]
+K_list = [5, 10, 22, 31, 40, 50, 60, 70, 80, 90, 100]
 
 num_K = len(K_list)
 M = 1
@@ -161,8 +163,7 @@ for j in range(num_K):
         Z = Z[:,np.newaxis]
         rbf_kernel = GPy.kern.RBF(lengthscale=1, input_dim=1)
         covar= rbf_kernel.K(Z)
-        print(covar)
-        exit()
+
 
         #X = np.concatenate((X_tmp, np.ones((N,1))), axis=1)
 
@@ -176,7 +177,7 @@ for j in range(num_K):
         w_sigma_true = w_sigma
 
         W_mean = np.ones((K, ))*2
-        W_cov = covar
+        W_cov = covar*w_sigma
         #W_mean = np.asarray([2, 2])
         #W_cov = np.asarray([[0.99,0.004],[0.004, 0.99]])
 
@@ -203,15 +204,15 @@ for j in range(num_K):
 
             #sm = pystan.StanModel(model_code=linear_regression_code)
             try:
-                sm = pickle.load(open('model_correlation_regression_10.pkl', 'rb'))
+                sm = pickle.load(open('model_correlation_regression_11.pkl', 'rb'))
             except:
                 sm = pystan.StanModel(model_code=linear_regression_code)
-                with open('model_correlation_regression_10.pkl', 'wb') as f:
+                with open('model_correlation_regression_11.pkl', 'wb') as f:
                     pickle.dump(sm, f)
 
             num_proposal_samples = 6000
             #fit_hmc = sm.sampling(data=model_data, iter=800)
-            fit_vb = sm.vb(data=model_data, iter=90000, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
+            fit_vb = sm.vb(data=model_data, iter=max_iters, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
                            algorithm=algo)
             # ### Run ADVI in Python
             # use analytical gradient of entropy
@@ -385,9 +386,11 @@ plt.savefig('vb_w_samples.pdf')
             # plt.show()
 
 plt.figure()
-plt.plot(K_list, np.mean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
-plt.plot(K_list, np.min(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
-plt.plot(K_list, np.max(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.plot(K_list, np.nanmean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
+plt.plot(K_list, np.nanmin(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.plot(K_list, np.nanmax(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.xlabel('Dimensions')
+plt.ylabel('K-hat')
 
 np.save('K_hat_linear_correlated_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
 #plt.ylim((0,5))

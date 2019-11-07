@@ -30,13 +30,29 @@ from helper import compute_entropy, gaussian_entropy, expectation_iw, compute_l2
 from autograd import grad
 from arviz import psislw
 
-
-np.set_printoptions(precision=3)
+import argparse
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--algorithm', '-a', type=int, default=1)
 parser.add_argument('--N', '-n', type=int, default=1000)
+parser.add_argument('--iters', '-i', type=int, default=40000)
 
 args = parser.parse_args()
+
+algo = 'meanfield'
+algo_name='mf'
+
+if args.algorithm ==1:
+    algo = 'meanfield'
+    algo_name = 'mf'
+elif args.algorithm ==2:
+    algo = 'fullrank'
+    algo_name = 'fr'
+
+np.set_printoptions(precision=3)
+parser = argparse.ArgumentParser()
+max_iters = args.iters
+
 N_user = args.N
 
 ##  code for linear model with fixed variances .
@@ -54,13 +70,13 @@ vector[K] w;
 }
 
 model{
-w ~ normal(4,0.5);
+w ~ normal(0,2);
 y ~ normal(X*w , sigma);
 }
 
 generated quantities{
 real log_joint_density;
-log_joint_density = normal_lpdf(y|X*w, sigma) + normal_lpdf(w| 0, 1) + log(sigma);
+log_joint_density = normal_lpdf(y|X*w, sigma) + normal_lpdf(w| 0, 2) + log(sigma);
 }
 """
 
@@ -80,8 +96,6 @@ def reparametrize(zs, means, L):
     Linv = np.linalg.inv(L)
     grad_correction = zs.T
     return samples, grad_correction
-
-
 
 # K=  2
 # M = 1
@@ -116,17 +130,22 @@ def reparametrize(zs, means, L):
 # Y = y_mean + np.random.normal(0, sigma_0, (N_train,M))
 
 
-
 N_train = N_user
 N = N_user
+
+try:
+    a1 = np.load('K_hat_linear_independent_'+algo_name + '_' + str(N) + 'N.npy')
+except:
+    pass
+
 K=  2
-K_list = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-K_list = [5, 10, 19, 30, 40,50]
+K_list = [5, 10, 20, 30, 40, 50, 60]
+#K_list = [5, 10, 19, 30, 40,50]
 
 num_K = len(K_list)
 M = 1
 w0= 0
-N_sim = 2
+N_sim = 5
 K_hat_stan_advi_list = np.zeros((num_K, N_sim))
 debug_mode = True
 
@@ -158,8 +177,8 @@ for j in range(num_K):
         w_mean_true = w_mean
         w_sigma_true = w_sigma
 
-        W_mean = np.ones((K, ))*2
-        W_cov = covar
+        W_mean = np.ones((K, ))*w_mean
+        W_cov = np.eye(K)*w_sigma
         #W_mean = np.asarray([2, 2])
         #W_cov = np.asarray([[0.99,0.004],[0.004, 0.99]])
 
@@ -176,7 +195,7 @@ for j in range(num_K):
 
         #sigma_0 = np.random.gamma(0.5, 0.5, M)
         sigma_0 = 0.90
-        sigma_0 = 0.25
+        sigma_0 = 0.35
         y_mean= X@W
         Y = y_mean + np.random.normal(0, sigma_0, (N,M))
 
@@ -191,15 +210,16 @@ for j in range(num_K):
 
             #sm = pystan.StanModel(model_code=linear_regression_code)
             try:
-                sm = pickle.load(open('model_correlation_regression_10.pkl', 'rb'))
+                sm = pickle.load(open('model_independent_regression_13.pkl', 'rb'))
             except:
                 sm = pystan.StanModel(model_code=linear_regression_code)
-                with open('model_correlation_regression_10.pkl', 'wb') as f:
+                with open('model_independent_regression_13.pkl', 'wb') as f:
                     pickle.dump(sm, f)
 
             num_proposal_samples = 6000
+            max_iters = 70000
             #fit_hmc = sm.sampling(data=model_data, iter=800)
-            fit_vb = sm.vb(data=model_data, iter=30000, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
+            fit_vb = sm.vb(data=model_data, iter=max_iters, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
                            algorithm='meanfield')
             # ### Run ADVI in Python
             # use analytical gradient of entropy
@@ -364,19 +384,19 @@ plt.figure()
 plt.plot(stan_vb_w[:,0], stan_vb_w[:,1], 'mo', label='STAN-ADVI')
 plt.savefig('vb_w_samples_mf.pdf')
 
-
-            # plt.figure(figsize=(20, 6))
-            # plt.plot(K_hat_clr_list[10:], label='CLR')
-            # plt.plot(K_hat_swa_list[10:], label='SWA')
-            # plt.legend()
-            # plt.savefig('Bayesian_Linear_Regression_K_hat1_50_2.pdf')
-            # plt.show()
+np.save('K_hat_linear_independent_'+algo_name + '_' + str(N) + 'N', K_hat_stan_advi_list)
 
 plt.figure()
-plt.plot(K_list, np.mean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
-plt.plot(K_list, np.min(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
-plt.plot(K_list, np.max(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
-plt.ylim((0,5))
+plt.plot(K_list, np.nanmean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
+plt.plot(K_list, np.nanmin(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.plot(K_list, np.nanmax(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.xlabel('Dimensions')
+plt.ylabel('K-hat')
+
+
+np.save('K_hat_linear_independent_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
+#plt.ylim((0,5))
 
 plt.legend()
-plt.savefig('Linear_Regression_K_hat_vs_D_mf_5000N.pdf')
+plt.savefig('Linear_Regression_K_hat_vs_D_independent_' + algo_name +'_' + str(N) + 'N.pdf')
+

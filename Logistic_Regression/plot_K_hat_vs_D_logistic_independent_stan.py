@@ -452,6 +452,8 @@ plt.figure()
 plt.plot(K_list, np.mean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
 plt.plot(K_list, np.min(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 plt.plot(K_list, np.max(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.xlabel('Dimensions')
+plt.ylabel('K-hat')
 
 np.save('K_hat_logistic_independent_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
 #plt.ylim((0,5))

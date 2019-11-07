@@ -36,10 +36,12 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--algorithm', '-a', type=int, default=1)
 parser.add_argument('--N', '-n', type=int, default=1000)
+parser.add_argument('--iters', '-i', type=int, default=40000)
 
 args = parser.parse_args()
 algo = 'meanfield'
 algo_name='mf'
+max_iters = args.iters
 
 if args.algorithm ==1:
     algo = 'meanfield'
@@ -174,7 +176,7 @@ for j in range(num_K):
 
         num_proposal_samples = 6000
         #fit_hmc = sm.sampling(data=model_data, iter=600)
-        fit_vb = sm.vb(data=model_data, iter=80000, tol_rel_obj=1e-4, output_samples=num_proposal_samples, algorithm=algo)
+        fit_vb = sm.vb(data=model_data, iter=max_iters, tol_rel_obj=1e-4, output_samples=num_proposal_samples, algorithm=algo)
 
         # ### Run ADVI in Python
         # use analytical gradient of entropy
@@ -456,7 +458,8 @@ plt.figure()
 plt.plot(K_list, np.nanmean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
 plt.plot(K_list, np.nanmin(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 plt.plot(K_list, np.nanmax(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
-
+plt.xlabel('Dimensions')
+plt.ylabel('K-hat')
 np.save('K_hat_logistic_correlated_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
 #plt.ylim((0,5))
 
