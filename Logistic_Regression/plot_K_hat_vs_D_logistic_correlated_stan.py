@@ -144,6 +144,7 @@ for j in range(num_K):
         Z = Z[:,np.newaxis]
         rbf_kernel = GPy.kern.RBF(lengthscale=1, input_dim=1)
         covar= rbf_kernel.K(Z)
+        covar2 = np.eye(K) + (np.ones((K,K))*0.7 - np.eye(K)*0.7)
 
         w_mean = 0
         w_mean = 4
