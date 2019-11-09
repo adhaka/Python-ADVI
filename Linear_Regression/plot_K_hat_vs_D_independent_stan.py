@@ -33,14 +33,22 @@ from arviz import psislw
 import argparse
 
 parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser()
 parser.add_argument('--algorithm', '-a', type=int, default=1)
 parser.add_argument('--N', '-n', type=int, default=1000)
-parser.add_argument('--iters', '-i', type=int, default=40000)
+parser.add_argument('--iters', '-i', type=int, default=80000)
+parser.add_argument('--samplesgrad', '-s', type=int, default=1)
+parser.add_argument('--sampleselbo', '-e', type=int, default=1)
+parser.add_argument('--evalelbo', '-l', type=int, default=100)
 
 args = parser.parse_args()
 
+max_iters = args.iters
 algo = 'meanfield'
 algo_name='mf'
+gradsamples = args.samplesgrad
+elbosamples = args.sampleselbo
+evalelbo = args.evalelbo
 
 if args.algorithm ==1:
     algo = 'meanfield'
@@ -128,8 +136,6 @@ def reparametrize(zs, means, L):
 #
 # y_mean= x_full@W
 # Y = y_mean + np.random.normal(0, sigma_0, (N_train,M))
-
-
 N_train = N_user
 N = N_user
 
@@ -220,7 +226,7 @@ for j in range(num_K):
             max_iters = 70000
             #fit_hmc = sm.sampling(data=model_data, iter=800)
             fit_vb = sm.vb(data=model_data, iter=max_iters, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
-                           algorithm='meanfield')
+                           algorithm=algo, grad_samples= gradsamples, elbo_samples=elbosamples, eval_elbo=evalelbo)
             # ### Run ADVI in Python
             # use analytical gradient of entropy
             compute_entropy_grad = grad(compute_entropy)
@@ -394,7 +400,7 @@ plt.xlabel('Dimensions')
 plt.ylabel('K-hat')
 
 
-np.save('K_hat_linear_independent_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
+np.save('K_hat_linear_independent_'+algo_name + '_' + str(N) + 'N', K_hat_stan_advi_list)
 #plt.ylim((0,5))
 
 plt.legend()

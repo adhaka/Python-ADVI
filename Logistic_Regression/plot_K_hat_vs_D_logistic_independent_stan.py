@@ -33,11 +33,18 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--algorithm', '-a', type=int, default=1)
 parser.add_argument('--N', '-n', type=int, default=1000)
-
+parser.add_argument('--iters', '-i', type=int, default=80000)
+parser.add_argument('--samplesgrad', '-s', type=int, default=1)
+parser.add_argument('--sampleselbo', '-e', type=int, default=1)
+parser.add_argument('--evalelbo', '-l', type=int, default=100)
 args = parser.parse_args()
 
+max_iters = args.iters
 algo = 'meanfield'
 algo_name='mf'
+gradsamples = args.samplesgrad
+elbosamples = args.sampleselbo
+evalelbo = args.evalelbo
 
 if args.algorithm ==1:
     algo = 'meanfield'
@@ -48,12 +55,23 @@ elif args.algorithm ==2:
 
 
 N_user= args.N
-
 np.set_printoptions(precision=3)
 
 ## code for general linear model without any constraints and gamma prior for std dev.
 ##  code for linear model with fixed variances .
 logistic_reg_fixed_variance_code= """
+functions{
+
+#    vector logit(vector x){
+#        real t;
+#        t = 1. /(1 + exp(-x));
+#        return t;
+#    }
+
+
+}
+
+
 data{
     int<lower=0> N;
     int<lower=0> K;
@@ -71,11 +89,12 @@ y ~ bernoulli_logit(X*w);
 
 generated quantities{
 real log_joint_density;
-#log_joint_density = bernoulli_lpdf(y|X*w) + normal_lpdf(w| 0, 1);
+
+log_joint_density = bernoulli_logit_lpmf(y|X*w) + normal_lpdf(w| 0, 1);
 }
 """
 
-np.random.seed(123)
+np.random.seed(209)
 
 logit = lambda x: 1./ (1 +np.exp(-x))
 
@@ -108,9 +127,9 @@ logit = lambda x: 1./ (1 +np.exp(-x))
 N_train = N_user
 N = N_user
 K_list = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-K_list = [5, 10, 20, 30, 40, 50]
+K_list = [5, 10, 20, 30, 40, 50, 60]
 num_K = len(K_list)
-N_sim= 1
+N_sim= 7
 
 K_hat_stan_advi_list = np.zeros((num_K, N_sim))
 debug_mode = True
@@ -164,18 +183,18 @@ for j in range(num_K):
        'X':X
        }
 
-        sm = pystan.StanModel(model_code=logistic_reg_fixed_variance_code)
+        #sm = pystan.StanModel(model_code=logistic_reg_fixed_variance_code)
         try:
-            sm = pickle.load(open('model_logistic_independent.pkl', 'rb'))
+            sm = pickle.load(open('model_logistic_independent_131.pkl', 'rb'))
         except:
             sm = pystan.StanModel(model_code=logistic_reg_fixed_variance_code)
-            with open('model_logistic.pkl', 'wb') as f:
+            with open('model_logistic_independent_131.pkl', 'wb') as f:
                 pickle.dump(sm, f)
 
         num_proposal_samples = 6000
         #fit_hmc = sm.sampling(data=model_data, iter=600)
-        fit_vb = sm.vb(data=model_data, iter=90000, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
-                           algorithm=algo)
+        fit_vb = sm.vb(data=model_data, iter=max_iters, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
+                           algorithm=algo, grad_samples=gradsamples, elbo_samples=elbosamples, eval_elbo=evalelbo)
         # use analytical gradient of entropy
         compute_entropy_grad = grad(compute_entropy)
         # ### Run ADVI in Python
@@ -449,13 +468,13 @@ for j in range(num_K):
             # plt.show()
 
 plt.figure()
-plt.plot(K_list, np.mean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
-plt.plot(K_list, np.min(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
-plt.plot(K_list, np.max(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.plot(K_list, np.nanmean(K_hat_stan_advi_list, axis=1), 'r-', alpha=1)
+plt.plot(K_list, np.nanmin(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
+plt.plot(K_list, np.nanmax(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 plt.xlabel('Dimensions')
 plt.ylabel('K-hat')
 
-np.save('K_hat_logistic_independent_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
+np.save('K_hat_logistic_independent_'+algo_name + '_' + str(N) + 'N', K_hat_stan_advi_list)
 #plt.ylim((0,5))
 
 plt.legend()

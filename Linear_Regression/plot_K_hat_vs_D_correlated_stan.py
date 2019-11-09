@@ -36,13 +36,19 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--algorithm', '-a', type=int, default=1)
 parser.add_argument('--N', '-n', type=int, default=1000)
-parser.add_argument('--iters', '-i', type=int, default=40000)
+parser.add_argument('--iters', '-i', type=int, default=80000)
+parser.add_argument('--samplesgrad', '-s', type=int, default=1)
+parser.add_argument('--sampleselbo', '-e', type=int, default=1)
+parser.add_argument('--evalelbo', '-l', type=int, default=100)
 
 args = parser.parse_args()
 
 max_iters = args.iters
 algo = 'meanfield'
 algo_name='mf'
+gradsamples = args.samplesgrad
+elbosamples = args.sampleselbo
+evalelbo = args.evalelbo
 
 if args.algorithm ==1:
     algo = 'meanfield'
@@ -53,7 +59,6 @@ elif args.algorithm ==2:
 
 
 N_user= args.N
-
 np.set_printoptions(precision=3)
 
 ##  code for linear model with fixed variances .
@@ -213,17 +218,15 @@ for j in range(num_K):
             num_proposal_samples = 6000
             #fit_hmc = sm.sampling(data=model_data, iter=800)
             fit_vb = sm.vb(data=model_data, iter=max_iters, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
-                           algorithm=algo)
+                           algorithm=algo, grad_samples=gradsamples, elbo_samples=elbosamples, eval_elbo=evalelbo)
             # ### Run ADVI in Python
             # use analytical gradient of entropy
             compute_entropy_grad = grad(compute_entropy)
-
             # settings
             step_size = 4e-7
             step_size= 4e-2/N_train
             itt_max = 3000
             num_samples = 1
-
             num_params = K
             means_vb = np.ones((num_params,))
             betas_vb = np.ones((num_params*(num_params+1)//2,1))
@@ -392,7 +395,7 @@ plt.plot(K_list, np.nanmax(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 plt.xlabel('Dimensions')
 plt.ylabel('K-hat')
 
-np.save('K_hat_linear_correlated_'+algo_name + '_' + str(N) + 'N.pdf', K_hat_stan_advi_list)
+np.save('K_hat_linear_correlated_'+algo_name + '_' + str(N) + 'N' + '_samples_' + str(gradsamples), K_hat_stan_advi_list)
 #plt.ylim((0,5))
 
 plt.legend()
