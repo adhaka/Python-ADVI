@@ -468,7 +468,7 @@ plt.plot(K_list, np.nanmin(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 plt.plot(K_list, np.nanmax(K_hat_stan_advi_list, axis=1), 'r-', alpha=0.5)
 plt.xlabel('Dimensions')
 plt.ylabel('K-hat')
-np.save('K_hat_logistic_correlated_'+algo_name + '_' + str(N) + 'N', K_hat_stan_advi_list)
+np.save('K_hat_linear_correlated_'+algo_name + '_' + str(N) + 'N' + '_samples_' + str(gradsamples), K_hat_stan_advi_list)
 #plt.ylim((0,5))
 
 

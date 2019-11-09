@@ -76,7 +76,7 @@ vector[K] w;
 }
 
 model{
-w ~ normal(4,0.5);
+w ~ normal(0, 1.);
 y ~ normal(X*w , sigma);
 }
 
@@ -143,12 +143,12 @@ N_train = N_user
 N = N_user
 K=  2
 K_list = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-K_list = [5, 10, 22, 31, 40, 50, 60, 70, 80, 90, 100]
+K_list = [5, 10, 22, 31, 40, 50, 60]
 
 num_K = len(K_list)
 M = 1
 w0= 0
-N_sim = 3
+N_sim = 6
 K_hat_stan_advi_list = np.zeros((num_K, N_sim))
 debug_mode = True
 
@@ -182,7 +182,8 @@ for j in range(num_K):
         w_sigma_true = w_sigma
 
         W_mean = np.ones((K, ))*2
-        W_cov = covar*w_sigma
+        W_cov1 = covar*w_sigma
+        W_cov = covar2*w_sigma
         #W_mean = np.asarray([2, 2])
         #W_cov = np.asarray([[0.99,0.004],[0.004, 0.99]])
 
