@@ -20,8 +20,8 @@ elif args.algorithm ==2:
     algo_name = 'fr'
 
 
-a1 = np.load('K_hat_linear_independent_'+ algo_name + '_' + str(N) + 'N.npy')
-a2 = np.load('K_hat_linear_correlated_'+ algo_name + '_' + str(N) + 'N.npy')
+a1 = np.load('K_hat_logistic_independent_'+ algo_name + '_' + str(N) + 'N.npy')
+a2 = np.load('K_hat_logistic_correlated_'+ algo_name + '_' + str(N) + 'N.npy')
 
 K_list = [5,10,20,30,40,50,60,70,80,90,100]
 
@@ -37,7 +37,7 @@ plt.plot(K_list, np.nanmax(a1, axis=1), 'r-', alpha=0.5)
 plt.plot(K_list, np.nanmean(a22, axis=1), 'b-', alpha=1, label='correlated')
 plt.plot(K_list, np.nanmin(a22, axis=1), 'b-', alpha=0.5)
 plt.plot(K_list, np.nanmax(a22, axis=1), 'b-', alpha=0.5)
+plt.legend(loc=2)
 plt.xlabel('Dimensions')
 plt.ylabel('K-hat')
-plt.legend(loc=2)
-plt.savefig('K_hat_linear_'+ algo_name + '_'+ str(N) +'.pdf')
+plt.savefig('K_hat_logistic_'+ algo_name + '_'+ str(N) +'.pdf')
