@@ -223,7 +223,6 @@ for j in range(num_K):
                     pickle.dump(sm, f)
 
             num_proposal_samples = 6000
-            max_iters = 70000
             #fit_hmc = sm.sampling(data=model_data, iter=800)
             fit_vb = sm.vb(data=model_data, iter=max_iters, tol_rel_obj=1e-4, output_samples=num_proposal_samples,
                            algorithm=algo, grad_samples= gradsamples, elbo_samples=elbosamples, eval_elbo=evalelbo)
@@ -400,7 +399,7 @@ plt.xlabel('Dimensions')
 plt.ylabel('K-hat')
 
 
-np.save('K_hat_linear_independent_'+algo_name + '_' + str(N) + 'N', K_hat_stan_advi_list)
+np.save('K_hat_linear_independent_'+algo_name + '_' + str(N) + 'N' + '_samples_' + str(gradsamples), K_hat_stan_advi_list)
 #plt.ylim((0,5))
 
 plt.legend()
