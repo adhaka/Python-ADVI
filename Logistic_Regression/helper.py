@@ -67,6 +67,15 @@ def expectation_iw(logw, statistic):
     return exp_statistic
 
 
+def compute_posterior_moments(prior_mean, prior_covariance, noise_variance, x, y):
+    prior_precision =np.linalg.inv(prior_covariance)
+    S_precision = prior_precision + x.T@ x *(1./noise_variance**2)
+    S = np.linalg.inv(S_precision)
+    post_S=S
+    post_mu = prior_precision@prior_mean + (1./noise_variance**2)* x.T@ y
+    post_mu = post_S@ post_mu
+    return post_S, post_mu
+
 def compute_R_hat_fn(chains, warmup=500):
     #warmup = 300
     chains = chains[:, warmup:, :]
@@ -84,5 +93,83 @@ def compute_R_hat_fn(chains, warmup=500):
     W = np.mean(s_j_2, axis=0)
     var_hat = (n_iters - 1) * W / n_iters + (B / n_iters)
     R_hat = np.sqrt(var_hat / W)
-    return R_hat
+    return var_hat, R_hat
     #print(R_hat)
+
+
+def autocorrelation(chains, warmup=500):
+    chains = chains[:, warmup:,:]
+    means = np.mean(chains, axis=1)
+    variances = np.var(chains, ddof=1, axis=1)
+    n_iters = chains.shape[1]
+    n_chains = chains.shape[0]
+    if n_chains == 1:
+        var_between = 0
+    else:
+        var_between = n_iters * np.var(means, ddof=1)
+
+    var_chains = np.mean(variances, axis=0)
+    var_pooled = ((n_iters - 1.) * var_chains + var_between) /n_iters
+    var_hat, psrf = compute_R_hat_fn(chains, warmup)
+    K = chains.shape[2] // 2
+    n_pad = int(2**np.ceil(1. + np.log2(n_iters)))
+    freqs =   np.fft.rfft(chains - np.expand_dims(means, axis=1), n_pad)
+    autocov = np.fft.irfft(np.abs(freqs)**2)[:,:n_iters,:].real
+    autocov= autocov / np.arange(n_iters, 0, -1)
+    rho_t = 0
+    lag = 1
+    while lag < n_iters:
+        val =   1. - (var_chains - np.mean(autocov[:,lag])) / var_pooled
+
+        if val >= 0:
+            rho_t = rho_t + val
+            lag = lag +1
+        else:
+            break
+
+
+    neff = n_iters *n_chains /(1 + 2*rho_t)
+    return neff, rho_t
+
+
+
+def autocorrelation(chains, warmup=500, lag=1):
+    chains = chains[:, warmup:,:]
+    means = np.mean(chains, axis=1)
+    variances = np.var(chains, ddof=1, axis=1)
+    n_iters = chains.shape[1]
+    n_chains = chains.shape[0]
+    if n_chains == 1:
+        var_between = 0
+    else:
+        var_between = n_iters * np.var(means, ddof=1)
+
+    chains_squared= chains**2
+    chains_lag = chains[:,lag:,:]
+
+    var_chains = np.mean(variances, axis=0)
+    var_pooled = ((n_iters - 1.) * var_chains + var_between) /n_iters
+    var_hat, psrf = compute_R_hat_fn(chains, warmup)
+    K = chains.shape[2] // 2
+    n_pad = int(2**np.ceil(1. + np.log2(n_iters)))
+    freqs =   np.fft.rfft(chains - np.expand_dims(means, axis=1), n_pad)
+    autocov = np.fft.irfft(np.abs(freqs)**2)[:,:n_iters,:].real
+    autocov= autocov / np.arange(n_iters, 0, -1)
+    rho_t = 0
+    lag = 1
+    while lag < n_iters:
+        val =   1. - (var_chains - np.mean(autocov[:,lag])) / var_pooled
+
+        if val >= 0:
+            rho_t = rho_t + val
+            lag = lag +1
+        else:
+            break
+
+
+    neff = n_iters *n_chains /(1 + 2*rho_t)
+    return neff, rho_t
+
+
+
+

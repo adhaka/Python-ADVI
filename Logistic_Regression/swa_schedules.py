@@ -252,23 +252,20 @@ def cyclical_step_size_schedule(step_size_min, step_size_max, epoch_current, cyc
 	return step_size_current
 
 
-scale_factor_vec = np.array([0.0001, 0.001, 0.01, 0.05, 0.1, 0.5, 1, 5])
+scale_factor_vec = np.array([1e-8, 1e-7, 0.000001, 0.00001, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5])
 
 
-def scale_factor_warm_up(x, y, scale_factor_vec= scale_factor_vec, warmup_iters=150, batch_size=100 ):
+def scale_factor_warm_up(x, y, mode='rms', warmup_iters=150, batch_size=100, scale_factor_vec=scale_factor_vec):
 	N = x.shape[0]
 	K = x.shape[1]
-
 	# K is the dimensionality of W in linear/logistic regression
 	inds = np.random.randint(N, size=(batch_size,))
 	N_scales= scale_factor_vec.size
-
 	X_batch = x[inds,:]
 	Y_batch = y[inds]
 	elbo_scale = np.zeros((N_scales, 1))
 	for j in np.arange(N_scales):
 		scale = scale_factor_vec[j]
-
 		epochs = warmup_iters
 		means_iter = np.zeros((epochs+1, K))
 		betas_iter = np.ones((epochs+1, K))
@@ -293,18 +290,23 @@ def scale_factor_warm_up(x, y, scale_factor_vec= scale_factor_vec, warmup_iters=
 				print(rho[i])
 
 			rho[i]= (i+1)**(-0.2)*scale / (1. + np.sqrt(s[i]))
-			means = means + rho[i,:K] * mean_grads
-			betas = betas + rho[i,K:] * betas_grad
+			if mode == 'rms':
+				means = means + rho[i,:K] * mean_grads
+				betas = betas + rho[i,K:] * betas_grad
+			elif mode == 'clr':
+				means = means + scale*mean_grads
+				betas = betas + scale*betas_grad
 			means_iter[i+1,:] = means
 			betas_iter[i+1,:] = betas
 
 		elbo_scale[j] = elbo_full(1000, means, betas, x, y)
-
-	#print(elbo_scale)
-	#exit()
-	print(elbo_scale)
-	print(np.argmax(elbo_scale))
+	#print(np.nanargmax(elbo_scale))
 	scale_factor = scale_factor_vec[np.nanargmax(elbo_scale)]
+	print(elbo_scale)
+	#print(scale_factor)
+	#print(scale_factor_vec)
+	#print(np.nanargmax(elbo_scale))
+	#exit()
 	return scale_factor
 
 logit = lambda x: 1./ (1 +np.exp(-x))
@@ -363,10 +365,7 @@ def elbo_full(n_samples, means, betas, x, y):
 	#for i in np.arange(n_samples):
 	zs = np.random.normal(0, 1, (K,))
 	elbo_samples = logp_data_logit(zs, means, betas, x, y)
-
 	return np.mean(elbo_samples) + gaussian_entropy(betas)
-
-
 
 
 def advi(X, Y, n_elbo_samples= 2000, epochs = 10000, thinning=20, scale_factor=None, S=1000,
