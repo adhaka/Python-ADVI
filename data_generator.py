@@ -33,8 +33,8 @@ def data_generator_linear(N, K, noise_sigma=1., mode='independent', seed=100):
     return regression_data
 
 
-def data_generator_logistic(N, K, noise_sigma, mode='independent'):
-    regression_data = data_generator_linear(N, K, noise_sigma, mode)
+def data_generator_logistic(N, K, noise_sigma, mode='independent', seed=100):
+    regression_data = data_generator_linear(N, K, noise_sigma, mode, seed=seed)
     Y_linear = regression_data['Y']
     p_full = logit(Y_linear)
     y_full = np.random.binomial(n=1, p=p_full)

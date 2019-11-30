@@ -22,15 +22,14 @@ import pickle
 
 from swa_schedules import stepsize_cyclical_adaptive_schedule, stepsize_linear_adaptive_schedule, stepsize_linear_weight_averaging, stepsize_linear_adaptive_is_mixing_schedule, rms_prop_gradient, step_size_rms_prop_schedule
 from helper import compute_entropy, gaussian_entropy, expectation_iw, compute_l2_norm, compute_l2_norm_means, compute_l2_norm_Sigmas, \
-    compute_R_hat_fn
+    compute_R_hat_fn, compute_posterior_moments
 from autograd import grad
 from arviz import psislw
 
 #from swa_schedules import scale_factor_warm_up, elbo_grad_gaussian
 #from swa_schedules import elbo_logit, elbo_grad_gaussian
-from helper import compute_posterior_moments
-from data_generator import data_generator_linear
-from functions import add_noise, scale_factor_warm_up, elbo_grad_gaussian, elbo_gaussian, elbo_full
+from data_generator import data_generator_linear, data_generator_logistic
+from functions import add_noise, scale_factor_warm_up, elbo_grad_logit, elbo_logit, elbo_full_logit, scale_factor_warmup_logit
 
 import argparse
 
@@ -39,6 +38,7 @@ parser.add_argument('--algorithm', '-a', type=int, default=1)
 parser.add_argument('--N', '-n', type=int, default=1000)
 parser.add_argument('--distribution', '-d', type=int, default=1)
 parser.add_argument('--posterior', '-p', type=str, default='independent')
+
 
 args = parser.parse_args()
 d = args.distribution
@@ -63,13 +63,12 @@ elif d ==2:
 
 N = args.N
 ##  code for linear model with fixed variances .
-linear_reg_fixed_variance_code= """
+logistic_reg_code= """
 data{
     int<lower=0> N;
     int<lower=0> K;
     matrix[N,K] X;
-    vector[N] y;
-    real<lower=0> sigma;
+    int<lower=0, upper=1> y[N];
 }
 
 parameters{
@@ -77,15 +76,12 @@ vector[K] w;
 }
 
 model{
-w ~ normal(0,1);
-#sigma~gamma(0.5,0.5);
-y ~ normal(X*w , sigma);
+y ~ bernoulli_logit(X*w);
 }
 
 generated quantities{
-real log_density;
-#log_density = normal_lpdf(y|X*w, sigma) + normal_lpdf(w| 0, 1) + gamma_lpdf(sigma|0.5, 0.5) + log(sigma);
-log_density = normal_lpdf(y|X*w, sigma) + normal_lpdf(w| 0, 1);
+real log_joint_density;
+log_joint_density = bernoulli_logit_lpmf(y|X*w) + normal_lpdf(w| 0, 1);
 }
 
 """
@@ -111,8 +107,8 @@ except:
     pass
 
 
-SEED= 2019
 
+SEED= 2019
 N = 3000
 N_test = 50
 K_list = [15]
@@ -127,13 +123,14 @@ compute_L2_norm = True
 K_hat_stan_advi_list = np.zeros((num_K, N_sim))
 l2_norm_rms_list = []
 
-itt_max_list = [2000, 5000, 10000, 20000]
-
+itt_max_list = [3000, 6000]
 num_itt_list = len(itt_max_list)
 #itt_max_list = [5000]
 compute_R_hat = True
 compute_K_hat = True
 step_size_set = False
+step_size_rms_set = False
+
 K_hat_vals_rms = np.zeros((num_itt_list, N_sim, num_K))
 K_hat_vals_clr = np.zeros((num_itt_list, N_sim, num_K))
 K_hat_vals_swa = np.zeros((num_itt_list, N_sim, num_K))
@@ -167,8 +164,7 @@ for i, itt_max in enumerate(itt_max_list):
         noise_sigma = 1.0
         noise_var = noise_sigma**2
 
-        regression_data= data_generator_linear(N, K, noise_sigma=noise_sigma, mode='correlated', seed=SEED)
-
+        regression_data= data_generator_logistic(N, K, noise_sigma=noise_sigma, mode=p, seed=SEED)
         X = regression_data['X']
         Y = regression_data['Y']
         W = regression_data['W']
@@ -190,21 +186,18 @@ for i, itt_max in enumerate(itt_max_list):
         model_data = {'N': N_train,
                       'K': K,
                       'y': Y[:, 0],
-                      'X': X,
-                      'sigma': noise_sigma
+                      'X': X
                       }
 
         try:
-            sm = pickle.load(open('pickled_results/model_linear_reg_chains62.pkl', 'rb'))
+            sm = pickle.load(open('pickled_results/model_logistic_reg_chains90.pkl', 'rb'))
         except:
-            sm = pystan.StanModel(model_code=linear_reg_fixed_variance_code)
-            with open('pickled_results/model_linear_reg_chains62.pkl', 'wb') as f:
+            sm = pystan.StanModel(model_code=logistic_reg_code)
+            with open('pickled_results/model_logistic_reg_chains90.pkl', 'wb') as f:
                 pickle.dump(sm, f)
 
         for n in range(N_sim):
             w_mean_n = w_mean_vi_list[n]
-
-
             num_proposal_samples = 10000
             try:
                 fit_hmc
@@ -290,8 +283,6 @@ for i, itt_max in enumerate(itt_max_list):
             l2_norm_sigmas_hmc_clr = []
             l2_norm_sigmas_hmc_rms = []
             l2_norm_sigmas_hmc_clr2 = []
-
-
             s_mean= 0
             s_log_var=0
 
@@ -305,14 +296,17 @@ for i, itt_max in enumerate(itt_max_list):
             s_prev=None
 
             if step_size_set is False:
-                scale_factor= scale_factor_warm_up(X, Y, noise_sigma, W_mean, W_sigma, mode='clr', warmup_iters=200)
-                #scale_factor =
+                scale_factor= scale_factor_warmup_logit(X, Y, mode='clr', warmup_iters=200)
                 print(scale_factor)
-                #step_size_rms = scale_factor_warm_up(X, Y, noise_sigma, W_mean, W_sigma, mode='rms', warmup_iters=200)
+                #step_size_rms = scale_factor_warm_up_logit(X, Y, mode='rms', warmup_iters=200)
                 step_size_rms = 0.1
                 #scale_factor = scale_factor/20000
-                #print(scale_factor)
                 step_size_set = True
+
+            if step_size_rms_set is False:
+                step_size_rms = scale_factor_warmup_logit(X, Y, mode='rms', warmup_iters=200)
+                step_size_rms_set = True
+
 
             step_size = scale_factor
             #step_size_rms = scale_factor/10
@@ -346,16 +340,7 @@ for i, itt_max in enumerate(itt_max_list):
                 #log_p_grad_rms_analytical = elbo_grad_gaussian(zs, means_vb_rms, log_sigmas_vb_rms, X, Y, noise_sigma, W_mean, W_sigma)
                 #log_p_grad_clr2_analytical = elbo_grad_gaussian(zs, means_vb_clr2, log_sigmas_vb_clr2, X, Y, noise_sigma, W_mean, W_sigma)
 
-                #print(log_p_grad)
-                #print(log_p_grad_analytical)
                 #log_p_prior_grad_analytical = log_prior_grad(zs_swa, w_mean, w_sigma, )
-
-
-                # using analytical gradients
-                #log_p_grad_analytical = elbo_grad_logit(zs_swa, means, log_sigmas, X, Y)
-                #log_p_grad_rms_analytical = elbo_grad_logit(zs, means_vb_rms, log_sigmas_vb_rms, X, Y)
-                #log_p_grad_clr2_analytical = elbo_grad_logit(zs, means_vb_clr2, log_sigmas_vb_clr2, X, Y)
-
                 #mean_grad_analytical = log_p_grad_analytical[:K]
                 #log_sigma_grad_analytical = log_p_grad_analytical[K:]
 
@@ -381,7 +366,6 @@ for i, itt_max in enumerate(itt_max_list):
                 elbo_rms = np.mean(log_p_rms) + compute_entropy(log_sigmas_vb_rms)
                 #elbo_rms_analytical = elbo_logit(zs, means_vb_rms, log_sigmas_vb_rms, X, Y)
                 entropy_grad = compute_entropy_grad(log_sigmas)
-                entropy_grad_clr = compute_entropy_grad(log_sigmas_vb_clr)
                 entropy_grad_rms = compute_entropy_grad(log_sigmas_vb_rms)
                 entropy_grad_clr2 = compute_entropy_grad(log_sigmas_vb_clr2)
                 #print(log_p_grad)
@@ -485,7 +469,7 @@ for i, itt_max in enumerate(itt_max_list):
                 #step_size, params_swa, swa_n = stepsize_linear_adaptive_schedule(params, step_size, step_size_min, step_size_max,
                 #itt+1, itt_max+1, 2, 1, params_swa, swa_n)
                 means += step_size*mean_grad
-                log_sigmas += step_size/2 *log_sigma_grad
+                log_sigmas += step_size *log_sigma_grad
 
                 means_vb_rms = params_rms_prop[0]
                 log_sigmas_vb_rms = params_rms_prop[1]
@@ -500,7 +484,6 @@ for i, itt_max in enumerate(itt_max_list):
                 #params_swa_list.append(params_vb_swa2)
                 means_vb_swa = params_swa[0].copy()
                 sigmas_vb_swa = np.exp(params_swa[1]).copy()
-
 
                 la = fit_hmc.extract(permuted=True)
                 hmc_w = la['w']
@@ -537,9 +520,9 @@ for i, itt_max in enumerate(itt_max_list):
                     l2_norm_means_hmc_rms.append(l2_norm_hmc_rms_means_i)
                     l2_norm_means_hmc_clr.append(l2_norm_hmc_clr_means_i)
 
-                    l2_norm_sigmas_hmc_swa.append(l2_norm_hmc_swa_means_i)
-                    l2_norm_sigmas_hmc_rms.append(l2_norm_hmc_rms_means_i)
-                    l2_norm_sigmas_hmc_clr.append(l2_norm_hmc_clr_means_i)
+                    l2_norm_sigmas_hmc_swa.append(l2_norm_hmc_swa_sigmas_i)
+                    l2_norm_sigmas_hmc_rms.append(l2_norm_hmc_rms_sigmas_i)
+                    l2_norm_sigmas_hmc_clr.append(l2_norm_hmc_clr_sigmas_i)
 
                     l2_norm_hmc_swa.append(l2_norm_swa_hmc_i)
                     l2_norm_hmc_rms.append(l2_norm_rms_hmc_i)
@@ -614,9 +597,7 @@ for i, itt_max in enumerate(itt_max_list):
                 #
             print('hii')
             #plt.figure(figsize=(20,6))
-        posterior_mean, posterior_variance = compute_posterior_moments(W_mean, np.diag(W_cov),
-                                                                       noise_sigma, X, Y)
-        posterior_sigma= np.sqrt(np.diag(posterior_variance))
+
 
     chains_clr2 = vi_params_collapsed2
     #chains2 = vi_params_collapsed[:, warmup:, :]
@@ -627,17 +608,14 @@ for i, itt_max in enumerate(itt_max_list):
     R_hat_list_mean_median.append(np.median(R_hat2[:K]))
     R_hat_list_sigma_median.append(np.median(R_hat2[K:]))
 
-print('analytical posterior mean:')
-print(posterior_mean)
-print('analytical posterior sigma:')
-print(posterior_sigma)
+
 fit_vb_samples = np.array(fit_vb['sampler_params']).T
 stan_vb_w = fit_vb_samples[:, 0:K]
 params_vb_stan_means = np.mean(stan_vb_w, axis=0)
 params_vb_stan_std = np.std(stan_vb_w, axis=0)
 params_vb_stan_sq = np.mean(stan_vb_w ** 2, axis=0)
 
-l2_norm_vb_stan_i = compute_l2_norm(params_vb_stan_means, params_vb_stan_std, posterior_mean, np.diag(posterior_variance))
+l2_norm_vb_stan_i = compute_l2_norm(params_vb_stan_means, params_vb_stan_std, params_hmc_mean, np.diag(params_hmc_sigmas))
 l2_norm_vb = np.repeat(l2_norm_vb_stan_i, itt_max)
 logq = stats.norm.pdf(stan_vb_w, params_vb_stan_means, params_vb_stan_std)
 logq_sum = np.sum(np.log(logq), axis=1)
@@ -663,13 +641,7 @@ params_hmc_mean = np.mean(params_hmc, axis=0)
 params_hmc_sq= np.mean(params_hmc**2, axis=0)
 params_hmc_sigmas= np.std(params_hmc, axis=0)
 
-l2_norm_hmc_i = compute_l2_norm(params_hmc_mean, params_hmc_sigmas, posterior_mean, np.diag(posterior_variance))
-l2_norm_hmc = np.repeat(l2_norm_hmc_i, itt_max)
 
-l2_norm_hmc_means_i = compute_l2_norm_means(params_hmc_mean, posterior_mean)
-l2_norm_hmc_sigmas_i = compute_l2_norm_Sigmas(params_hmc_sigmas, np.sqrt(posterior_variance))
-l2_norm_hmc_means = np.repeat(l2_norm_hmc_means_i, itt_max)
-l2_norm_hmc_sigmas = np.repeat(l2_norm_hmc_sigmas_i, itt_max)
 
 l2_norm_vb_stan_means_i = compute_l2_norm_means(params_vb_stan_means, W_mean)
 l2_norm_vb_stan_sigmas_i = compute_l2_norm_Sigmas(params_vb_stan_std, W_cov)
@@ -681,6 +653,8 @@ chains_clr2 = vi_params_collapsed2
 chains2 = vi_params_collapsed[:,warmup:,:]
 R_hat2 = compute_R_hat_fn(chains_clr2, warmup)
 print(R_hat2)
+
+
 
 if debug_mode:
     print(W_mean)
@@ -701,19 +675,22 @@ if debug_mode:
 #plt.scatter(K_list, np.mean(K_hat_swa_list, axis=1), 'r-')
 #plt.scatter(K_list, np.mean(K_hat_clr_list, axis=1), 'm-')
 #plt.plot(K_list, np.mean(K_hat_stan_advi_list, axis=1), 'y-')
+
+print(len(mean_list_i[1,:]))
+
 plt.figure()
 plt.plot(mean_list_i[0,:], 'r-', label='Chain 1')
 plt.plot(mean_list_i[1,:], 'g-', label='Chain 2')
 plt.plot(mean_list_i[2,:], 'm-', label='Chain 3')
 plt.plot(mean_list_i[3,:], 'b-', label='Chain 4')
-plt.plot(np.repeat(posterior_mean[0], len(mean_list_i[1,:])), 'k-', label='True posterior')
+plt.plot(np.repeat(params_hmc_mean[0], len(mean_list_i[1,:])), 'k-', label='HMC posterior')
 plt.ylim((3,6))
 plt.xlabel('Iterations')
 plt.ylabel('Means')
 plt.legend()
 
-plt.savefig('plots/vi_chains.pdf')
-np.save('mean_0_chains', mean_list_i )
+plt.savefig('plots/Log_Reg_vi_chains_mean_MF.pdf')
+np.save('mean_0_chains_MF', mean_list_i )
 print(mean_list_i)
 
 plt.figure()
@@ -724,11 +701,11 @@ plt.plot(sigmas_list_i[2,:], 'm-', label='Chain 3')
 plt.plot(sigmas_list_i[3,:], 'b-', label='Chain 4')
 plt.xlabel('Iterations')
 plt.ylabel('Variances')
-plt.plot(np.repeat(np.sqrt(posterior_variance[0,0]), len(sigmas_list_i[1,:])), 'k-', label='True posterior')
+plt.plot(np.repeat(params_hmc_sigmas[0], len(sigmas_list_i[1,:])), 'k-', label='HMC posterior')
 plt.ylim((-0.2, 1.2))
 
 plt.legend()
-plt.savefig('plots/vi_chains_sigma_0.pdf')
+plt.savefig('plots/Log_Reg_vi_chains_sigma_MF.pdf')
 
 plt.figure()
 plt.plot(itt_max_list, R_hat_list_mean_max,  'ro')
@@ -742,7 +719,7 @@ plt.plot(itt_max_list, R_hat_list_sigma_median, 'b-', label='R_hat_sigma', alpha
 
 
 plt.legend()
-plt.savefig('plots/R_hat_vs_iters.pdf')
+plt.savefig('plots/Log_Reg_R_hat_vs_iters_MF.pdf')
 
 
 
@@ -755,7 +732,7 @@ plt.plot(itt_max_list, np.mean(np.mean(K_hat_vals_rms, axis=2), axis=1),  'r-', 
 plt.plot(itt_max_list, np.mean(np.mean(K_hat_vals_swa, axis=2), axis=1),  'b-', label='SWA')
 
 plt.legend()
-plt.savefig('plots/K_hat_vs_iters.pdf')
+plt.savefig('plots/Log_Reg_K_hat_vs_iters_MF.pdf')
 plt.figure()
 
 
@@ -765,7 +742,7 @@ plt.plot(l2_norm_hmc_clr, 'g-', label='CLR')
 plt.plot(l2_norm_hmc_swa, 'b-', label='SWA')
 plt.yscale('log')
 plt.legend()
-plt.savefig('Linear_Regression_optimizers_10D_500N_hmc_Gelbo.pdf')
+plt.savefig('Log_Reg_MF_10D_2000N_hmc_Gelbo.pdf')
 
 
 
@@ -778,7 +755,7 @@ plt.plot(l2_norm_means_hmc_swa, 'b-', label='SWA')
 #plt.plot(l2_norm_vb, '-', label='VB')
 plt.yscale('log')
 plt.legend()
-plt.savefig('Linear_Regression_optimizers_mean_10D_500N_hmc_Gelbo.pdf')
+plt.savefig('Log_Reg_MF_mean_10D_2000N_hmc_Gelbo.pdf')
 #plt.show()
 
 plt.figure()
@@ -789,4 +766,4 @@ plt.plot(l2_norm_sigmas_hmc_swa, 'b-', label='SWA')
 #plt.plot(l2_norm_vb, '-', label='VB')
 plt.yscale('log')
 plt.legend()
-plt.savefig('Linear_Regression_optimizers_sigmas_10D_500N_hmc_Gelbo.pdf')
+plt.savefig('Log_Reg_MF_sigmas_10D_2000N_hmc_Gelbo.pdf')
